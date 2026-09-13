@@ -1,0 +1,58 @@
+#!/usr/bin/env sh
+# vclip — one entry point for the clip workflow.
+#
+# Usage:
+#   vclip chapters   <URL|FILE>        list chapter markers
+#   vclip transcribe <URL|FILE> [...]  timestamped transcript
+#   vclip clip       <URL|FILE> [...]  cut clips
+#   vclip download   <URL> [...]       download the whole video
+#
+# Run `vclip <command> --help` for each command's options.
+
+set -e
+
+# Resolve symlinks so the script still finds its siblings when it is linked
+# into a directory on PATH.
+target=$0
+while [ -L "$target" ]; do
+    link=$(readlink "$target")
+    case $link in
+        /*) target=$link ;;
+        *) target=$(dirname "$target")/$link ;;
+    esac
+done
+DIR=$(cd "$(dirname "$target")" && pwd)
+
+PYTHON=${VCLIP_PYTHON:-python3}
+
+usage() {
+    sed -n '2,11p' "$DIR/vclip" | sed 's/^# \{0,1\}//'
+}
+
+command=${1:-}
+[ $# -gt 0 ] && shift
+
+case "$command" in
+    chapters)
+        [ $# -ge 1 ] || { echo "vclip chapters needs a URL or file" >&2; exit 1; }
+        exec "$PYTHON" "$DIR/clip.py" "$1" --list-chapters
+        ;;
+    transcribe)
+        exec "$PYTHON" "$DIR/transcribe.py" "$@"
+        ;;
+    clip)
+        exec "$PYTHON" "$DIR/clip.py" "$@"
+        ;;
+    download)
+        exec "$PYTHON" "$DIR/download.py" "$@"
+        ;;
+    -h|--help|help|"")
+        usage
+        ;;
+    *)
+        echo "vclip: unknown command '$command'" >&2
+        echo >&2
+        usage >&2
+        exit 1
+        ;;
+esac

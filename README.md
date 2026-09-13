@@ -1,12 +1,13 @@
 # download
 
-Command-line tools for downloading videos (or audio) from YouTube and other
+Command-line tools for downloading videos from YouTube and other
 [yt-dlp](https://github.com/yt-dlp/yt-dlp)-supported sites, and for cutting
-highlight clips out of them.
+clip videos (切り抜き) out of them — hook-first, digest, or plain cuts.
 
 - `transcribe.py` — build a timestamped transcript so you can find the moments worth clipping
-- `clip.py` — cut those moments into clips, optionally reframed vertically with a burned-in caption
+- `clip.py` — cut those moments into clips, reframed vertically with burned-in captions
 - `download.py` — download a whole video or its audio
+- `vclip` — one command that wraps all three
 
 ## Setup
 
@@ -14,43 +15,61 @@ highlight clips out of them.
 pip install -r requirements.txt
 ```
 
-`ffmpeg` must also be installed on your system and on your `PATH`. It merges
-separate audio/video streams, extracts audio, and does all the cutting.
+`ffmpeg` must also be installed and on your `PATH`. It merges separate
+audio/video streams, extracts audio, and does all the cutting.
 
-Local speech recognition is optional and only needed for videos without
+Local speech recognition is optional, and only needed for videos without
 captions:
 
 ```bash
 pip install faster-whisper
 ```
 
+### Install globally
+
+```bash
+./install.sh
+```
+
+This puts the `vclip` command on your `PATH` (via `~/.local/bin`), and installs
+the Claude Code integration into `~/.claude/`: the `video-clip` skill and the
+`/clip` slash command. Everything is symlinked to this repo, so `git pull`
+updates the installed copies too.
+
+Options: `--bin-dir DIR` and `--claude-dir DIR` to install elsewhere.
+
 ## The clipping workflow
 
-Find the moments *first*, then cut. Guessing timestamps and cutting blind
-wastes the slow step (downloading and re-encoding), so start by reading the
-video rather than watching it end to end.
+Interview first, then find the moments, then cut. Cutting is the mechanical
+part — downloading and re-encoding are slow, so every wrong assumption about
+format or length costs a full round trip.
+
+### 0. Decide what you are making
+
+Three questions settle most of it: which style, what platform and length, and
+whether it is vertical. The `/clip` slash command asks these before it starts.
 
 ### 1. Look for chapter markers
 
 Chapters are the cheapest source of clip boundaries, when the video has them:
 
 ```bash
-python clip.py "<URL>" --list-chapters
+vclip chapters "<URL>"
 ```
+
+They are coarse — a 12-minute chapter is not a clip — so treat them as a map of
+where to look.
 
 ### 2. Transcribe to find the actual moments
 
-Chapters are coarse and many videos have none. A timestamped transcript lets
-you scan the whole video in a minute and spot where something quotable
-happens:
+A timestamped transcript lets you scan a 40-minute video in a minute:
 
 ```bash
-python transcribe.py "<URL>" -o transcript.txt
+vclip transcribe "<URL>" -o transcript.txt -l ja
 ```
 
 This uses the video's own captions when they exist (fast, no model download),
-and falls back to local speech recognition when they do not. Output looks
-like:
+and falls back to local speech recognition when they do not. Output looks like:
 
 ```
 [00:00:01] intro and today's topic
@@ -65,66 +84,97 @@ Options:
 - `-e, --engine {auto,subs,whisper}` — `auto` prefers captions and falls back to
   local transcription; `subs` refuses to fall back; `whisper` always transcribes locally
 - `--model SIZE` — faster-whisper model size (default: `small`)
-- `-w, --window SECONDS` — group the transcript into blocks of about this many
-  seconds; `0` keeps every caption line (default: `15`)
+- `-w, --window SECONDS` — group into blocks of about this many seconds; `0`
+  keeps every caption line (default: `15`)
 
 ### 3. Read the transcript and pick your ranges
 
-Scan for the timestamps where something lands, then note them as ranges. Give
-each clip a little runway — start a few seconds before the line you want so it
-has context, and let it breathe at the end.
+Scan for where something lands, then note the ranges. Start a few seconds
+before the line you want so it has its run-up, do not cut mid-sentence, and let
+it breathe at the end. Aim for 30–60 seconds for Shorts.
 
-### 4. Cut the clips
+### 4. Cut
+
+Pass every range in one command — the source is downloaded once and all ranges
+are cut from it, so ten clips cost one download.
+
+## Clip styles
+
+**Hook-first** — lead with the sharpest few seconds, then play the segment in
+full. The lead-in is what stops the scroll.
 
 ```bash
-python clip.py "<URL>" -c 3:05-3:48 -c 7:35-8:10 -o clips
+vclip clip "<URL>" --style hook --hook 12:40-12:48 -c 12:10-13:05 \
+  --vertical blur --caption "この一言で空気が変わった" -o clips
 ```
 
-The source video is downloaded once and every range is cut from that same
-file, so asking for several clips costs one download.
+The caption lands on the hook only by default — held across the whole clip it
+reads as a subtitle rather than a hook.
 
-Options:
+**Digest** — join several ranges into one clip, for "the good parts of a 2-hour
+stream".
+
+```bash
+vclip clip "<URL>" --style digest -c 4:10-4:38 -c 18:02-18:44 -c 51:20-51:58 -o clips
+```
+
+**Plain** (default) — each range becomes its own file.
+
+```bash
+vclip clip "<URL>" -c 3:05-3:48 -c 7:35+45 -o clips
+```
+
+### clip options
 
 - `-c, --clip RANGE` — repeatable; `START-END` or `START+DURATION`
   (`-c 1:23-2:10`, `-c 5:00+45`). Timestamps accept `83`, `1:23`, or `1:02:03`
+- `-s, --style {plain,digest,hook}` — see above (default: `plain`)
+- `--hook RANGE` — the moment to lead with, required by `--style hook`
+- `--vertical {crop,blur,both}` — reframe to 1080x1920. `crop` zooms and
+  centre-crops (more impact, edges lost); `blur` fits the whole frame over a
+  blurred background (nothing lost, subject smaller); `both` writes each so you
+  can compare
+- `--caption TEXT` — burn text across the bottom. A CJK-capable font is chosen
+  automatically when the caption needs one
+- `--caption-scope {hook,all}` — defaults to `hook` for `--style hook`, `all` otherwise
 - `-o, --output-dir DIR` — where to write clips (default: `clips`)
 - `-p, --prefix NAME` — output filename prefix (default: `clip`)
-- `--vertical {crop,blur}` — reframe to 1080x1920 for Shorts/Reels. `crop`
-  zooms in and centre-crops; `blur` fits the whole frame over a blurred
-  background
-- `--caption TEXT` — burn a caption across the bottom of every clip
 - `--copy` — copy streams instead of re-encoding. Much faster, but cuts snap to
-  the nearest keyframe (so clips can run seconds long) and no reframing or
-  caption is possible
-- `--keep-source DIR` — keep the downloaded source video instead of discarding it
+  the nearest keyframe (clips run long) and it cannot be combined with
+  reframing, captions, or the joined styles
+- `--keep-source DIR` — keep the downloaded source instead of discarding it
 - `--list-chapters` — print chapter markers and exit
 
-### Example: a vertical clip for Shorts
+## Working from a local file
+
+Worth doing if you will iterate on the ranges — it avoids re-downloading:
 
 ```bash
-python clip.py "<URL>" -c 3:05-3:48 --vertical blur --caption "the good part" -o clips
+vclip download "<URL>" -o ./downloads
+vclip transcribe ./downloads/video.mp4 -o transcript.txt
+vclip clip ./downloads/video.mp4 --style hook --hook 12:40-12:48 -c 12:10-13:05 -o clips
 ```
 
-### Working from a local file
+Every command takes a local path wherever it takes a URL.
 
-Every command takes a local path in place of a URL, which is worth doing if
-you are going to iterate on the ranges:
+## Claude Code integration
 
-```bash
-python download.py "<URL>" -o ./downloads
-python transcribe.py ./downloads/video.mp4 -o transcript.txt
-python clip.py ./downloads/video.mp4 -c 3:05-3:48 -o clips
-```
+After `./install.sh`:
+
+- `/clip <URL>` — runs the whole workflow, interviewing you about style,
+  length, framing and captions before it cuts anything
+- The `video-clip` skill triggers on its own whenever you ask for a 切り抜き,
+  a digest, Shorts, or "clips from this video"
 
 ## download.py
 
 ```bash
-python download.py <URL>
+vclip download <URL>
 ```
 
 Options:
 
-- `-o, --output-dir DIR` — directory to save the downloaded file (default: current directory)
+- `-o, --output-dir DIR` — directory to save the file (default: current directory)
 - `-a, --audio-only` — extract audio only and save as mp3
 
 ## Note

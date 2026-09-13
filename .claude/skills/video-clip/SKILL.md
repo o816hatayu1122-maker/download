@@ -1,28 +1,79 @@
 ---
 name: video-clip
-description: Cut highlight clips ("切り抜き動画") out of a long video or YouTube URL using this repo's transcribe.py and clip.py. Use this skill whenever someone wants to clip, trim, excerpt, or pull highlights out of a video, make Shorts/Reels/TikTok cuts from a longer recording, find the good parts of a stream or talk, or asks for a 切り抜き — even if they only paste a video URL and say "make clips from this" without naming the tools. Also use it when someone asks where the interesting moments in a video are, or wants a timestamped transcript to pick clip points from.
+description: Make clip videos ("切り抜き動画") from a long video or YouTube URL — hook-first, digest, or plain cuts — using the vclip command (transcribe.py / clip.py). Use this skill whenever someone wants to clip, trim, excerpt, or pull highlights out of a video, make Shorts/Reels/TikTok cuts from a longer recording, build a digest of the good parts, find where the interesting moments are, or asks for a 切り抜き or ダイジェスト — even if they only paste a video URL and say "make clips from this" without naming any tool. Also use it when someone wants a timestamped transcript to pick clip points from.
 ---
 
 # Making clip videos
 
-The whole job is picking the right moments. Cutting is mechanical once you know
-the timestamps, so the mistake to avoid is jumping straight to `clip.py` with
-guessed times. Downloading and re-encoding are the slow steps — guessing wastes
-them and produces clips that start mid-sentence.
+Two things decide whether a clip is good, and neither is the cutting: knowing
+what the user actually wants, and finding the right moment. Cutting is
+mechanical once those are settled.
 
-Find the moments first, then cut once.
+So the order is: **interview, then find the moments, then cut.** Skipping
+ahead produces clips that are technically fine and useless — the wrong format,
+the wrong length, starting mid-sentence.
 
-## Step 1: Check for chapters
+## Step 0: Interview the user first
+
+Do this before touching the video. Downloading and re-encoding are the slow
+steps, and every wrong assumption costs a full round trip. Ask, and wait for
+answers:
+
+- **Style** — hook-first, digest, or a plain cut? (See the styles below. If
+  they are unsure, describe the three in a line each rather than picking for
+  them.)
+- **Platform and length** — vertical Shorts/Reels/TikTok at 30–60s? Longer
+  vertical for talking-head material? Horizontal 1–3 minutes? Full length?
+- **Framing**, if vertical — blurred-background fit (nothing is lost, subject
+  is smaller) or centre-crop zoom (more impact, edges are cut)? Offering both
+  and comparing is cheap and often the right answer.
+- **Captions** — a short burned-in hook line, none, or captions throughout?
+- **Which moments**, if they already have some in mind. Often they do, and it
+  saves the transcript pass.
+
+Ask these as actual questions, in one batch. Do not present a plan built on
+guesses and ask them to approve it — they cannot see what you assumed.
+
+## The three styles
+
+**Hook-first** (`--style hook`) leads with the most arresting few seconds, then
+plays the segment in full. The lead-in is what stops the scroll, so it earns
+its keep on Shorts and Reels. It needs two ranges: the hook and the body.
+
+```bash
+vclip clip "<URL>" --style hook --hook 12:40-12:48 -c 12:10-13:05 \
+  --vertical blur --caption "この一言で空気が変わった" -o clips
+```
+
+The caption lands on the hook only by default. A caption held across the whole
+clip stops reading as a hook and starts reading as a subtitle.
+
+**Digest** (`--style digest`) joins several ranges into one clip — the shape
+for "the good parts of a 2-hour stream". Order the ranges so it builds; put
+the strongest moment first if the platform punishes slow starts.
+
+```bash
+vclip clip "<URL>" --style digest -c 4:10-4:38 -c 18:02-18:44 -c 51:20-51:58 -o clips
+```
+
+**Plain** (`--style plain`, the default) writes each range as its own file. Use
+it when the moments stand alone, or to draft candidates before deciding what
+goes into a digest.
+
+```bash
+vclip clip "<URL>" -c 3:05-3:48 -c 7:35+45 -o clips
+```
+
+## Step 1: Look for chapters
 
 Chapters are free clip boundaries when the uploader made them:
 
 ```bash
-python clip.py "<URL>" --list-chapters
+vclip chapters "<URL>"
 ```
 
-Chapters are coarse — a 12-minute chapter is not a clip. Treat them as a map of
-where to look, not as the ranges themselves. Many videos have none; that is
-fine, go to step 2.
+They are coarse — a 12-minute chapter is not a clip. Treat them as a map of
+where to look. Many videos have none; that is fine.
 
 ## Step 2: Transcribe
 
@@ -30,98 +81,86 @@ A timestamped transcript lets you read a 40-minute video in a minute instead of
 watching it:
 
 ```bash
-python transcribe.py "<URL>" -o transcript.txt
+vclip transcribe "<URL>" -o transcript.txt -l ja
 ```
 
-This pulls the video's own captions when they exist (fast, no model download)
+This uses the video's own captions when they exist (fast, no model download)
 and falls back to local speech recognition when they do not. Useful flags:
 
-- `-l ja` / `-l en` — preferred language
 - `-w 0` — one line per caption instead of ~15-second blocks, when you need
-  tighter timestamps for a specific passage
-- `-e whisper` — force local transcription when the auto-captions are too
-  garbled to read
+  tighter timestamps for a passage you have already located
+- `-e whisper` — force local transcription when auto-captions are too garbled
 
-Local transcription needs `pip install faster-whisper`. If captions are absent
-and faster-whisper is not installed, say so rather than guessing timestamps.
+Local transcription needs `pip install faster-whisper`. If there are no
+captions and it is not installed, say so — do not fall back to guessing.
 
-## Step 3: Read the transcript and choose ranges
+## Step 3: Choose the ranges
 
-Read it. This is the part that takes judgment and it is the reason the clips
-will be good or bad.
+Read the transcript. This is the part that takes judgment.
 
-What tends to make a clip worth cutting:
+What tends to be worth clipping: a complete thought — a claim, a punchline, a
+reveal, a question finally answered — that makes sense to someone who has not
+seen the rest of the video.
 
-- A complete thought — a claim, a punchline, a reveal, a question answered
-- A moment that makes sense to someone who has not seen the rest of the video
-- Something with a hook in the first few seconds; viewers leave fast
-
-Then set the boundaries:
+Setting the boundaries:
 
 - **Start a few seconds early.** The transcript timestamp marks where a line
-  starts, but the setup usually begins before it. Starting exactly on the
-  timestamp clips off the run-up and the clip feels like it begins mid-thought.
-- **Do not cut mid-sentence at either end.** Extend to the end of the thought.
-- **Let it breathe at the end** — a beat after the last word, not a hard stop.
-- **Aim for 30–60 seconds** for Shorts/Reels/TikTok; up to a few minutes for a
-  standalone clip. If a moment needs five minutes of context, it is not a clip.
+  starts, but the setup begins before it. Cutting exactly on the timestamp
+  loses the run-up and the clip opens mid-thought.
+- **Do not cut mid-sentence** at either end; extend to the end of the thought.
+- **Let it breathe** — a beat after the last word, not a hard stop.
+- **30–60 seconds** for Shorts/Reels/TikTok. If a moment needs five minutes of
+  setup, it is not a clip.
+- **For hook-first, the hook is a different decision from the body.** Look for
+  the sharpest 3–8 seconds *inside* the segment — the line someone would quote.
+  A hook that merely starts the story is not a hook.
 
-When the user has not said which moments they want, propose the ranges with a
-one-line reason for each and let them confirm before you spend time cutting.
-Do not silently pick for them.
+Propose the ranges with a one-line reason each and get confirmation before
+cutting. Do not silently pick for the user.
 
 ## Step 4: Cut
 
-```bash
-python clip.py "<URL>" -c 3:05-3:48 -c 7:35-8:10 -o clips
-```
-
 Pass every range in one command. The source is downloaded once and all ranges
-are cut from that same file, so ten clips cost one download.
+are cut from it, so ten clips cost one download.
 
-Ranges accept `START-END` or `START+DURATION` (`-c 5:00+45`). Timestamps accept
-`83`, `1:23`, or `1:02:03`.
+Options worth knowing:
 
-For vertical platforms:
-
-```bash
-python clip.py "<URL>" -c 3:05-3:48 --vertical blur --caption "the good part" -o clips
-```
-
-- `--vertical crop` zooms in and centre-crops. Good when the subject is centred;
-  it will cut off anything at the edges of the frame.
-- `--vertical blur` fits the whole frame over a blurred background. Safer when
-  the framing matters — nothing is lost — but the subject ends up smaller.
-- `--caption` burns text across the bottom. Keep it short; it is a hook, not a
-  summary.
-- `--copy` skips re-encoding and is much faster, but cuts snap to the nearest
-  keyframe, so clips can run seconds longer than asked. Use it only for rough
-  drafts, and never with `--vertical` or `--caption` (those need re-encoding).
+- `--vertical crop|blur|both` — reframe to 1080x1920. `both` writes each so the
+  user can compare; that is usually worth the extra encode on a first pass.
+- `--caption TEXT` — burned-in text. Short. It is a hook, not a summary.
+- `--caption-scope hook|all` — defaults to `hook` for hook-first, `all` otherwise.
+- `--copy` — skips re-encoding, much faster, but cuts snap to keyframes so
+  clips run long. Draft use only; it cannot be combined with reframing,
+  captions, or the joined styles.
+- `-p PREFIX` — output filename prefix, worth setting when producing several
+  variants into one directory.
 
 ## Iterating
 
-If the user will want to adjust ranges, download once and work locally — this
-avoids re-downloading on every attempt:
+If the ranges will need adjusting, download once and work from the local file
+so you are not re-downloading each attempt:
 
 ```bash
-python download.py "<URL>" -o ./downloads
-python transcribe.py ./downloads/video.mp4 -o transcript.txt
-python clip.py ./downloads/video.mp4 -c 3:05-3:48 -o clips
+vclip download "<URL>" -o ./downloads
+vclip transcribe ./downloads/video.mp4 -o transcript.txt
+vclip clip ./downloads/video.mp4 --style hook --hook 12:40-12:48 -c 12:10-13:05 -o clips
 ```
 
 Every command takes a local path wherever it takes a URL.
 
 ## Requirements
 
-`ffmpeg` must be on the `PATH`, and `pip install -r requirements.txt` covers
-yt-dlp. If a download fails with a proxy or network error, report the blocked
-host rather than retrying around it — sandboxed environments often block
-youtube.com outright, in which case the user needs to run these commands on
-their own machine.
+`ffmpeg` must be on the `PATH`. If `vclip` is not installed, the scripts run
+directly (`python3 clip.py ...`) from the repo.
+
+If a download fails with a proxy or network error, report the blocked host
+rather than retrying around it — sandboxed environments often block
+youtube.com outright, and the user then needs to run the command on their own
+machine.
 
 ## Rights
 
 Clips are derivative works. Many creators explicitly allow clip channels under
-stated conditions and some prohibit them. If the user is going to publish, it is
-worth a reminder to check the channel's policy — once, not as a lecture on every
-clip.
+stated conditions and some prohibit them. If the user is going to publish, a
+single reminder to check the channel's policy is worth it — once, not as a
+lecture on every clip.
