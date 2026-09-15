@@ -23,7 +23,15 @@ while [ -L "$target" ]; do
 done
 DIR=$(cd "$(dirname "$target")" && pwd)
 
-PYTHON=${VCLIP_PYTHON:-python3}
+# Prefer the virtualenv install.sh builds next to the scripts, so the command
+# keeps working regardless of which python happens to be on PATH.
+if [ -n "${VCLIP_PYTHON:-}" ]; then
+    PYTHON=$VCLIP_PYTHON
+elif [ -x "$DIR/.venv/bin/python3" ]; then
+    PYTHON="$DIR/.venv/bin/python3"
+else
+    PYTHON=python3
+fi
 
 usage() {
     sed -n '2,11p' "$DIR/vclip" | sed 's/^# \{0,1\}//'

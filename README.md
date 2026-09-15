@@ -12,31 +12,41 @@ clip videos (切り抜き) out of them — hook-first, digest, or plain cuts.
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-```
-
-`ffmpeg` must also be installed and on your `PATH`. It merges separate
-audio/video streams, extracts audio, and does all the cutting.
-
-Local speech recognition is optional, and only needed for videos without
-captions:
-
-```bash
-pip install faster-whisper
-```
-
-### Install globally
-
-```bash
+git clone https://github.com/o816hatayu1122-maker/download.git
+cd download
 ./install.sh
 ```
 
-This puts the `vclip` command on your `PATH` (via `~/.local/bin`), and installs
-the Claude Code integration into `~/.claude/`: the `video-clip` skill and the
-`/clip` slash command. Everything is symlinked to this repo, so `git pull`
-updates the installed copies too.
+That one command does everything: it builds a virtualenv with the Python
+dependencies, puts the `vclip` command on your `PATH` via `~/.local/bin`
+(adding that directory to your shell profile if it is missing), and installs
+the Claude Code integration into `~/.claude/` — the `video-clip` skill and the
+`/clip` slash command.
 
-Options: `--bin-dir DIR` and `--claude-dir DIR` to install elsewhere.
+Everything is symlinked back to this repo, so `git pull` updates the installed
+command too. Re-running the installer is safe; it will not duplicate anything.
+
+Then open a new terminal (or `source` the profile it names) and check:
+
+```bash
+vclip --help
+```
+
+`ffmpeg` is the one thing the installer cannot provide, and nothing can be cut
+without it:
+
+```bash
+brew install ffmpeg          # macOS
+sudo apt install ffmpeg      # Debian/Ubuntu
+```
+
+### Installer options
+
+- `--with-whisper` — also install faster-whisper, for videos with no captions
+- `--no-venv` — install the dependencies into your current Python instead
+- `--no-path` — leave your shell profile alone
+- `--bin-dir DIR` / `--claude-dir DIR` — install somewhere other than the defaults
+- `--uninstall` — remove the command, the skill, and the PATH entry
 
 ## The clipping workflow
 

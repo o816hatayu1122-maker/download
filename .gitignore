@@ -7,3 +7,4 @@ downloads/
 *.mp4
 *.mp3
 transcript.txt
+.venv/
